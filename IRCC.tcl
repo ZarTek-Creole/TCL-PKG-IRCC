@@ -15,7 +15,7 @@ namespace eval ::IRCC {
   # counter used to differentiate connections
   variable conn                  0
   variable config
-  variable pkg_vers             0.0.2
+  variable pkg_vers             0.0.3
   variable pkg_vers_min_need_tcl  8.6
   variable pkg_vers_min_need_tls  1.7.16
   variable irctclfile           [info script]
@@ -1465,8 +1465,13 @@ proc ::IRCC::connection { args } {
       set value  [lindex $args 1]
       if { $key eq "debug" } {
         if {$value} {
-          if { !$config(logger) } { cmd-config logger 1 }
-          ${logger}::enable debug
+          if { !$config(logger) } {
+            if { [catch { cmd-config logger 1 }] } {
+              set config(debug) 0
+              return -code error "debug nécessite logger (tcllib)"
+            }
+          }
+          if { [info exists logger] } { ${logger}::enable debug }
         } elseif { [info exists logger] } {
           ${logger}::disable debug
         }
@@ -1751,7 +1756,9 @@ proc ::IRCC::connection { args } {
         set sock  {}
         cmd-log error "Error receiving from network: $line"
         if { [info exists dispatch(EOF)] } {
-          eval $dispatch(EOF)
+          if { [catch { eval $dispatch(EOF) } err] } {
+            cmd-log error "EOF callback failed: $err"
+          }
         }
         return
       }
@@ -1764,10 +1771,11 @@ proc ::IRCC::connection { args } {
         set linedata(msg)  {}
       }
 
+      set headerWords [regexp -all -inline {\S+} $header]
       if { [string match :* $header] } {
-        set header  [split [string trimleft $header :]]
+        set header  [lreplace $headerWords 0 0 [string trimleft [lindex $headerWords 0] :]]
       } else {
-        set header  [linsert [split $header] 0 {}]
+        set header  [linsert $headerWords 0 {}]
       }
       set linedata(rawline)      [string trim $line];
       set linedata(who)          [string trim [lindex $header 0]];
@@ -1776,15 +1784,20 @@ proc ::IRCC::connection { args } {
       set linedata(additional)  [string trim [lrange $header 3 end]];
       set linedata(numname)      [::IRCC::num2name [lindex $header 1]];
       if { [info exists dispatch($linedata(action))] } {
-        eval $dispatch($linedata(action))
+        set _cb $dispatch($linedata(action))
       } elseif { [info exists dispatch($linedata(numname))] } {
-        eval $dispatch($linedata(numname))
+        set _cb $dispatch($linedata(numname))
       } elseif { [string match {[0-9]??} $linedata(action)] } {
-        eval $dispatch(defaultnumeric)
+        set _cb $dispatch(defaultnumeric)
       } elseif { $linedata(who) eq "" } {
-        eval $dispatch(defaultcmd)
+        set _cb $dispatch(defaultcmd)
       } else {
-        eval $dispatch(defaultevent)
+        set _cb $dispatch(defaultevent)
+      }
+      if { [info exists _cb] && $_cb ne "" && $_cb ne "#" } {
+        if { [catch { eval $_cb } err] } {
+          cmd-log error "Callback $linedata(action) failed: $err"
+        }
       }
     }
 
