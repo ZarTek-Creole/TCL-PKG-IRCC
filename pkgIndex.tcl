@@ -8,4 +8,4 @@
 # script is sourced, the variable $dir must contain the
 # full path name of this file's directory.
 
-package ifneeded IRCC 0.0.1 [list source [file join $dir IRCC.tcl]]
+package ifneeded IRCC 0.0.2 [list source [file join $dir IRCC.tcl]]

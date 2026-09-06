@@ -15,7 +15,7 @@ namespace eval ::IRCC {
   # counter used to differentiate connections
   variable conn                  0
   variable config
-  variable pkg_vers             0.0.1
+  variable pkg_vers             0.0.2
   variable pkg_vers_min_need_tcl  8.6
   variable pkg_vers_min_need_tls  1.7.16
   variable irctclfile           [info script]
@@ -1393,10 +1393,15 @@ proc ::IRCC::connection { args } {
     array set linedata  {}
     array set config  [array get ::IRCC::config]
     if { $config(logger) || $config(debug) } {
-      package require logger
-      variable logger
-      set logger    [logger::init [namespace tail [namespace current]]]
-      if { !$config(debug) } { ${logger}::disable debug }
+      if { [catch { package require logger }] } {
+        # tcllib/logger optionnel — continue sans journalisation
+        set config(logger) 0
+        set config(debug) 0
+      } else {
+        variable logger
+        set logger    [logger::init [namespace tail [namespace current]]]
+        if { !$config(debug) } { ${logger}::disable debug }
+      }
     }
     proc TLSSocketCallBack { level args } {
       set SOCKET_NAME  [lindex $args 0]
@@ -1468,7 +1473,9 @@ proc ::IRCC::connection { args } {
       }
       if { $key eq "logger" } {
         if { $value && !$config(logger)} {
-          package require logger
+          if { [catch { package require logger } err] } {
+            return -code error "logger indisponible (tcllib): $err"
+          }
           set logger  [logger::init [namespace tail [namespace current]]]
         } elseif { [info exists logger] } {
           ${logger}::delete
